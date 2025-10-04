@@ -1,7 +1,6 @@
 # 🎼 PLATiNA :: ARCHIVE 클라이언트
 
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![GitHub release](https://img.shields.io/github/v/release/YOUR_USERNAME/YOUR_REPO?include_prereleases)](https://github.com/YOUR_USERNAME/YOUR_REPO/releases)
 
 PLATiNA :: ARCHIVE 클라이언트는 리듬 게임 **PLATiNA :: LAB**의 플레이 스크린샷을 분석하여 점수 기록을 자동 추출하고 관리하는 **비공식 팬메이드** 데스크톱 애플리케이션입니다.
 
