@@ -1,16 +1,25 @@
+from __future__ import annotations
+
 import os
 import re
+import sys
 import time
-from typing import Dict, List, Optional, Literal
+from typing import Dict, List, Optional
 
 import imagehash
 import pytesseract
 import requests
-from PIL import Image, ImageGrab
+from PIL import Image, ImageGrab, ImageOps
 
 # Assuming these are correctly defined in models.py with the 'self' fix
 # and AnalysisReport is a simple data class for results.
 from models import AnalysisReport, Pattern, Song
+
+if getattr(sys, "frozen", False):
+    base_dir = os.path.dirname(sys.executable)
+else:
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+os.environ["TESSDATA_PREFIX"] = os.path.join(base_dir, "tesseract", "tessdata")
 
 # --- CONFIGURATION CONSTANTS ---
 # Use one dictionary for all ROI ratios for better maintainability.
@@ -28,6 +37,7 @@ ROI_CONFIG = {
     "score": (953, 418, 1316, 483),
     "notes_area": (874, 0, 950, 0),  # Placeholder for common X
     # Notes Y-Coordinates (start_y, end_y) for fixed X (notes_area)
+    "total_notes": (589, 614),
     "perfect_high_y": (650, 675),
     "perfect_y": (686, 713),
     "great_y": (725, 751),
@@ -56,6 +66,8 @@ class ScreenshotAnalyzer:
     """
 
     def __init__(self, song_database: List[Song]):
+        tesseract_exe_path = os.path.join(base_dir, "tesseract", "tesseract.exe")
+        pytesseract.pytesseract.tesseract_cmd = tesseract_exe_path
         self.song_db: Dict[int, Song] = {song.id: song for song in song_database}
         self.jacket_hash_map: Dict[str, Song] = self._build_jacket_hash_map()
         self.PHASH_THRESHOLD = 5
@@ -81,7 +93,7 @@ class ScreenshotAnalyzer:
 
     @staticmethod
     def _scale_coordinate(
-            ratio_x: float, ratio_y: float, size: tuple[int, int]
+        ratio_x: float, ratio_y: float, size: tuple[int, int]
     ) -> tuple[int, int]:
         """Scales normalized coordinates to the current screenshot size."""
         user_width, user_height = size
@@ -89,9 +101,8 @@ class ScreenshotAnalyzer:
         abs_y = int(round(user_height * ratio_y))
         return abs_x, abs_y
 
-
     def _crop_and_ocr(
-            self, img: Image, config_key: str, ocr_func, is_point=False, **kwargs
+        self, img: Image, config_key: str, ocr_func, is_point=False, **kwargs
     ):
         """Helper to handle scaling, cropping, and running OCR."""
         ref_coords = ROI_CONFIG[config_key]
@@ -103,7 +114,14 @@ class ScreenshotAnalyzer:
             return ocr_func(img, abs_x, abs_y, **kwargs)  # Call color/point function
 
         # Handle notes area with common X but separate Y
-        if config_key in ["perfect_high_y", "perfect_y", "great_y", "good_y", "miss_y"]:
+        if config_key in [
+            "perfect_high_y",
+            "perfect_y",
+            "great_y",
+            "good_y",
+            "miss_y",
+            "total_notes",
+        ]:
             notes_x = ROI_CONFIG["notes_area"]
             rx0, rxf = self._ratio(notes_x[0], 0)[0], self._ratio(notes_x[2], 0)[0]
             ry0, ryf = (
@@ -124,7 +142,7 @@ class ScreenshotAnalyzer:
     # --- OCR / Matching Functions (Moved from global scope) ---
 
     def get_best_match_song(
-            self, target_hash: imagehash.ImageHash
+        self, target_hash: imagehash.ImageHash
     ) -> tuple[Optional[Song], int]:
         """Finds the Song object corresponding to the target pHash."""
         min_distance = float("inf")
@@ -158,7 +176,7 @@ class ScreenshotAnalyzer:
     def get_ocr_line(img_crop: Image) -> int:
         """OCR for line count (4, 6). If no text, assume 6."""
         # Whitelist 4, 6, and 8
-        ocr_config = r"--psm 7 -c tessedit_char_whitelist=468"
+        ocr_config = r"--psm 7 -c tessedit_char_whitelist=46"
         text = pytesseract.image_to_string(img_crop, config=ocr_config).strip()
 
         # Fallback logic: if OCR is empty, assume 6 (a common game logic)
@@ -170,15 +188,15 @@ class ScreenshotAnalyzer:
     @staticmethod
     def get_ocr_integer(img_crop: Image) -> int:
         """OCR for pure integer values (Level, Score, Notes)."""
-        config = r"--psm 7 -c tessedit_char_whitelist=0123456789"
+        # Upscale and make image bw for better ocr result
+        img_crop = ScreenshotAnalyzer._upscale_and_convert_image_bw(img_crop)
+        img_crop = ImageOps.invert(img_crop)
+        config = r"--psm 7 --oem 1 -c tessedit_char_whitelist=0123456789"
         text = pytesseract.image_to_string(img_crop, config=config).strip()
-
-        # Remove commas/dots if OCR misreads them
-        cleaned_text = re.sub(r"[.,]", "", text)
-
         try:
-            return int(cleaned_text)
+            return int(text)
         except ValueError:
+            img_crop.show()
             return 0
 
     @staticmethod
@@ -274,6 +292,32 @@ class ScreenshotAnalyzer:
         # The game often rounds this value to two decimal places
         return round(patch_base, 2)
 
+    @staticmethod
+    def verify_notes_count(
+        total: int, perfect_high: int, perfect: int, great: int, good: int, miss: int
+    ):
+        if total == perfect_high + perfect + great + good + miss:
+            return perfect_high, perfect, great, good, miss
+        elif perfect_high > total:
+            perfect_high = total - (perfect + great + good + miss)
+        elif perfect > total:
+            perfect = total - (perfect_high + great + good + miss)
+        elif great > total:
+            great = total - (perfect_high + perfect + good + miss)
+        elif good > total:
+            good = total - (perfect_high + perfect + great + miss)
+        else:
+            miss = total - (perfect_high + perfect + great + good)
+        return perfect_high, perfect, great, good, miss
+
+    @staticmethod
+    def _upscale_and_convert_image_bw(img: Image):
+        resized_img = img.resize(
+            (img.width * 4, img.height * 4), Image.Resampling.LANCZOS
+        )
+        grayscale_img = resized_img.convert("L")
+        bw_img = grayscale_img.point(lambda x: 255 if x > 150 else 0, "1")
+        return bw_img
 
     # --- Main Execution Method ---
     def extract_info(self, image_path: str | None = None) -> AnalysisReport:
@@ -307,11 +351,15 @@ class ScreenshotAnalyzer:
         level_ocr = self._crop_and_ocr(img, "level", self.get_ocr_integer)
         patch_ocr = self._crop_and_ocr(img, "patch", self.get_ocr_patch)
         score_ocr = self._crop_and_ocr(img, "score", self.get_ocr_integer)
+        total_notes = self._crop_and_ocr(img, "total_notes", self.get_ocr_integer)
         perfect_high = self._crop_and_ocr(img, "perfect_high_y", self.get_ocr_integer)
         perfect = self._crop_and_ocr(img, "perfect_y", self.get_ocr_integer)
         great = self._crop_and_ocr(img, "great_y", self.get_ocr_integer)
         good = self._crop_and_ocr(img, "good_y", self.get_ocr_integer)
         miss = self._crop_and_ocr(img, "miss_y", self.get_ocr_integer)
+        perfect_high, perfect, great, good, miss = self.verify_notes_count(
+            total_notes, perfect_high, perfect, great, good, miss
+        )
 
         # --- 3. Difficulty Color Check ---
         r, g, b = img.getpixel(
@@ -336,6 +384,10 @@ class ScreenshotAnalyzer:
         available_levels = matched_song.get_available_levels(lines, difficulty_str)
         if len(available_levels) == 1:
             level_int = available_levels[0]
+
+        is_full_combo = miss == 0
+        is_perfect_decode = calculated_judge_rate == 100
+
         # --- 5. Return Structured Report ---
         return AnalysisReport(
             matched_song,
@@ -348,6 +400,9 @@ class ScreenshotAnalyzer:
             jacket_crop,
             jacket_hash,
             match_distance,
+            calculated_rank,
+            is_full_combo,
+            is_perfect_decode,
         )
 
 

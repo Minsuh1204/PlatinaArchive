@@ -2,7 +2,7 @@ import time
 import tkinter as tk
 from tkinter import ttk
 
-from PIL import ImageTk
+from PIL import Image, ImageTk
 
 from analyzer import ScreenshotAnalyzer, fetch_songs
 from models import AnalysisReport
@@ -22,7 +22,7 @@ class PlatinaArchiveClient:
         self.top_frame = ttk.Frame(app, style="Top.TFrame")
         self.top_frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=10)
 
-        self.title_label = ttk.Label(self.top_frame, text="Test")
+        # self.title_label = ttk.Label(self.top_frame, text="Test")
 
         self.main_content_frame = ttk.Frame(app, style="Main.TFrame")
         self.main_content_frame.pack(
@@ -34,8 +34,8 @@ class PlatinaArchiveClient:
             width=200,
             height=200,
             bg="white",
-            relief=tk.SOLID,
-            bd=1,
+            relief=tk.FLAT,
+            bd=0,
         )
         self.jacket_canvas.grid(
             row=0, column=0, rowspan=3, padx=10, pady=10, sticky="nw"
@@ -49,16 +49,26 @@ class PlatinaArchiveClient:
 
         # Song Name
         self.song_name_label = ttk.Label(
-            self.info_frame, text="Song Name: N/A", font=("Segoe UI", 12, "bold")
+            self.info_frame, text="", font=("Roboto", 12, "bold")
         )
         self.song_name_label.pack(anchor="w", pady=2)
 
         # Judge Rate
-        self.judge_rate_label = ttk.Label(self.info_frame, text="Judge: N/A")
+        self.judge_rate_label = ttk.Label(
+            self.info_frame, text="", font=("Roboto", 12, "bold")
+        )
         self.judge_rate_label.pack(anchor="w", pady=2)
 
+        # Score
+        self.score_label = ttk.Label(
+            self.info_frame, text="", font=("Roboto", 12, "bold")
+        )
+        self.score_label.pack(anchor="w", pady=2)
+
         # Lines and Difficulty (can be on one line or separate)
-        self.lines_diff_label = ttk.Label(self.info_frame, text="Lines: N/A, Diff: N/A")
+        self.lines_diff_label = ttk.Label(
+            self.info_frame, text="", font=("Roboto", 12, "bold")
+        )
         self.lines_diff_label.pack(anchor="w", pady=2)
 
         # --- Log Output Frame (mimics the lower section) ---
@@ -69,7 +79,7 @@ class PlatinaArchiveClient:
             self.log_frame,
             wrap=tk.WORD,
             height=10,
-            font=("Consolas", 9),
+            font=("Roboto", 9),
             bg="#F0F0F0",
             fg="black",
         )
@@ -115,16 +125,22 @@ class PlatinaArchiveClient:
 
     def update_display(self, report: AnalysisReport):
         # Size: 400x400
-        resized_jacket_image = report.jacket_image.resize((200, 200))
+        resized_jacket_image = report.jacket_image.resize(
+            (200, 200), Image.Resampling.LANCZOS
+        )
         self.jacket_photo = ImageTk.PhotoImage(resized_jacket_image)
         self.jacket_canvas.delete("all")
-        self.jacket_canvas.create_image(
-            100, 100, image=self.jacket_photo, anchor=tk.CENTER
-        )
+        self.jacket_canvas.create_image(0, 0, image=self.jacket_photo, anchor=tk.NW)
 
         # Update labels
         self.song_name_label.config(text=report.song.title)
-        self.judge_rate_label.config(text=f"{report.judge}%")
+        judge_text = f"Judge: {report.judge}% ({report.rank})"
+        if report.is_perfect_decode:
+            judge_text += " [PERFECT DECODE]"
+        elif report.is_full_combo:
+            judge_text += " [FULL COMBO]"
+        self.judge_rate_label.config(text=judge_text)
+        self.score_label.config(text=f"Score: {report.score:,}")
         self.lines_diff_label.config(
             text=f"{report.line}L {report.difficulty} Lv.{report.level}"
         )
@@ -133,12 +149,15 @@ class PlatinaArchiveClient:
         self.log_message("--- Analysis Complete ---")
         self.log_message(str(report))
         self.log_message(f"Read hash: {report.jacket_hash}")
+        self.log_message(f"Match distance: {report.match_distance}")
         if report.match_distance > 5:
             self.log_message(
                 f"Warning: Jacket match distance {report.match_distance} is high. Result might be uncertain."
             )
         # Do sanity check for ocr-read level
-        if not report.level in report.song.get_available_levels(report.line, report.difficulty):
+        if not report.level in report.song.get_available_levels(
+            report.line, report.difficulty
+        ):
             self.log_message(
                 f"Warning: Level {report.level} is NOT registered on DB. Result might be uncertain."
             )

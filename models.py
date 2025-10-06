@@ -8,17 +8,20 @@ from imagehash import ImageHash
 
 class AnalysisReport:
     def __init__(
-            self,
-            song: Song,
-            score: int,
-            judge: float,
-            patch: float,
-            line: Literal[4, 6],
-            difficulty: Literal["EASY", "HARD", "OVER", "PLUS"],
-            level: int,
-            jacket_image: Image,
-            jacket_hash: ImageHash,
-            match_distance,
+        self,
+        song: Song,
+        score: int,
+        judge: float,
+        patch: float,
+        line: Literal[4, 6],
+        difficulty: Literal["EASY", "HARD", "OVER", "PLUS"],
+        level: int,
+        jacket_image: Image,
+        jacket_hash: ImageHash,
+        match_distance,
+        rank: str,
+        is_full_combo: bool,
+        is_perfect_decode: bool,
     ):
         self._song = song
         self._score = score
@@ -30,6 +33,9 @@ class AnalysisReport:
         self._jacket_image = jacket_image
         self._jacket_hash = jacket_hash
         self._match_distance = match_distance
+        self._rank = rank
+        self._is_full_combo = is_full_combo
+        self._is_perfect_decode = is_perfect_decode
 
     def __str__(self):
         return f"{self.song.title} - {self.song.artist} | {self.line}L {self.difficulty} Lv.{self.level}\nJudge: {self.judge}%\nScore: {self.score}\nP.A.T.C.H.: {self.patch}"
@@ -74,14 +80,26 @@ class AnalysisReport:
     def match_distance(self):
         return self._match_distance
 
+    @property
+    def rank(self):
+        return self._rank
+
+    @property
+    def is_full_combo(self):
+        return self._is_full_combo
+
+    @property
+    def is_perfect_decode(self):
+        return self._is_perfect_decode
+
 
 class Pattern:
     def __init__(
-            self,
-            line: Literal[4, 6],
-            difficulty: Literal["EASY", "HARD", "OVER", "PLUS"],
-            level: int,
-            designer: str,
+        self,
+        line: Literal[4, 6],
+        difficulty: Literal["EASY", "HARD", "OVER", "PLUS"],
+        level: int,
+        designer: str,
     ):
         self._line = line
         self._difficulty = difficulty
@@ -110,14 +128,14 @@ class Pattern:
 
 class Song:
     def __init__(
-            self,
-            song_id: int,
-            title: str,
-            artist: str,
-            bpm: str,
-            dlc: str,
-            phash: str | None,
-            plus_phash: str | None,
+        self,
+        song_id: int,
+        title: str,
+        artist: str,
+        bpm: str,
+        dlc: str,
+        phash: str | None,
+        plus_phash: str | None,
     ):
         self._id = song_id
         self._title = title
@@ -163,8 +181,9 @@ class Song:
     def add_pattern(self, pattern: Pattern):
         self._patterns.append(pattern)
 
-    def get_available_levels(self, line: Literal[4, 6], difficulty: Literal["EASY", "HARD", "OVER", "PLUS"]) -> list[
-        int]:
+    def get_available_levels(
+        self, line: Literal[4, 6], difficulty: Literal["EASY", "HARD", "OVER", "PLUS"]
+    ) -> list[int]:
         levels = []
         for pattern in self._patterns:
             if pattern.line == line and pattern.difficulty == difficulty:
