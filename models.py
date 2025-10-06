@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Literal
 
-from PIL import Image
 from imagehash import ImageHash
+from PIL import Image
 
 
 class AnalysisReport:
@@ -16,7 +16,7 @@ class AnalysisReport:
         line: Literal[4, 6],
         difficulty: Literal["EASY", "HARD", "OVER", "PLUS"],
         level: int,
-        jacket_image: Image,
+        jacket_image: Image.Image,
         jacket_hash: ImageHash,
         match_distance,
         rank: str,

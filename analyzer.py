@@ -159,7 +159,7 @@ class ScreenshotAnalyzer:
         return best_match_song, min_distance
 
     @staticmethod
-    def get_ocr_judge(img_crop: Image) -> float:
+    def get_ocr_judge(img_crop: Image.Image) -> float:
         """OCR for judge percentage (e.g., 99.0000%)."""
         # Fix: Char whitelist spelling
         ocr_config = r"--psm 7 -c tessedit_char_whitelist=0123456789.%"
@@ -173,7 +173,7 @@ class ScreenshotAnalyzer:
             return 0.0
 
     @staticmethod
-    def get_ocr_line(img_crop: Image) -> int:
+    def get_ocr_line(img_crop: Image.Image) -> int:
         """OCR for line count (4, 6). If no text, assume 6."""
         # Whitelist 4, 6, and 8
         ocr_config = r"--psm 7 -c tessedit_char_whitelist=46"
@@ -186,21 +186,23 @@ class ScreenshotAnalyzer:
             return 6
 
     @staticmethod
-    def get_ocr_integer(img_crop: Image) -> int:
+    def get_ocr_integer(img_crop: Image.Image, do_invert: bool = False) -> int:
         """OCR for pure integer values (Level, Score, Notes)."""
         # Upscale and make image bw for better ocr result
         img_crop = ScreenshotAnalyzer._upscale_and_convert_image_bw(img_crop)
-        img_crop = ImageOps.invert(img_crop)
-        config = r"--psm 7 --oem 1 -c tessedit_char_whitelist=0123456789"
+        if do_invert:
+            img_crop = ImageOps.invert(img_crop)
+        config = "--psm 7 --oem 1 -c tessedit_char_whitelist=0123456789"
         text = pytesseract.image_to_string(img_crop, config=config).strip()
         try:
             return int(text)
         except ValueError:
+            print(f"Error when converting the text to str: '{text}'")
             img_crop.show()
             return 0
 
     @staticmethod
-    def get_ocr_patch(img_crop: Image) -> float:
+    def get_ocr_patch(img_crop: Image.Image) -> float:
         """OCR for patch value (e.g., 2.79)."""
         config = r"--psm 7 -c tessedit_char_whitelist=0123456789.+"
         text = (
@@ -316,7 +318,7 @@ class ScreenshotAnalyzer:
             (img.width * 4, img.height * 4), Image.Resampling.LANCZOS
         )
         grayscale_img = resized_img.convert("L")
-        bw_img = grayscale_img.point(lambda x: 255 if x > 150 else 0, "1")
+        bw_img = grayscale_img.point(lambda x: 255 if x > 200 else 0, "1")
         return bw_img
 
     # --- Main Execution Method ---
@@ -348,7 +350,7 @@ class ScreenshotAnalyzer:
         # Note: 'good' corresponds to the 'good' count in the stats.
         judge_rate_ocr = self._crop_and_ocr(img, "judge", self.get_ocr_judge)
         lines = self._crop_and_ocr(img, "line", self.get_ocr_line)
-        level_ocr = self._crop_and_ocr(img, "level", self.get_ocr_integer)
+        level_ocr = self._crop_and_ocr(img, "level", self.get_ocr_integer, do_invert=True)
         patch_ocr = self._crop_and_ocr(img, "patch", self.get_ocr_patch)
         score_ocr = self._crop_and_ocr(img, "score", self.get_ocr_integer)
         total_notes = self._crop_and_ocr(img, "total_notes", self.get_ocr_integer)
