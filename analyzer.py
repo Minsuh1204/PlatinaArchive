@@ -35,6 +35,7 @@ ROI_CONFIG = {
     "level": (395, 700, 502, 762),
     "patch": (979, 186, 1320, 251),
     "score": (953, 418, 1316, 483),
+    "rank": (1020, 575, 1345, 890),
     "notes_area": (874, 0, 950, 0),  # Placeholder for common X
     # Notes Y-Coordinates (start_y, end_y) for fixed X (notes_area)
     "total_notes": (589, 614),
@@ -102,7 +103,13 @@ class ScreenshotAnalyzer:
         return abs_x, abs_y
 
     def _crop_and_ocr(
-        self, img: Image, config_key: str, ocr_func, is_point=False, **kwargs
+        self,
+        img: Image,
+        config_key: str,
+        ocr_func,
+        is_point=False,
+        no_preprocess=False,
+        **kwargs,
     ):
         """Helper to handle scaling, cropping, and running OCR."""
         ref_coords = ROI_CONFIG[config_key]
@@ -137,6 +144,10 @@ class ScreenshotAnalyzer:
         abs_xf, abs_yf = self._scale_coordinate(rxf, ryf, size)
 
         crop = img.crop((abs_x0, abs_y0, abs_xf, abs_yf))
+        if no_preprocess:
+            return ocr_func(crop, **kwargs)
+        # do preprocess for better OCR result
+        crop = self.ocr_preprocess(crop, **kwargs)
         return ocr_func(crop, **kwargs)
 
     # --- OCR / Matching Functions (Moved from global scope) ---
@@ -186,20 +197,18 @@ class ScreenshotAnalyzer:
             return 6
 
     @staticmethod
-    def get_ocr_integer(img_crop: Image.Image, do_invert: bool = False) -> int:
+    def get_ocr_integer(img_crop: Image.Image, **kwargs) -> int:
         """OCR for pure integer values (Level, Score, Notes)."""
-        # Upscale and make image bw for better ocr result
-        img_crop = ScreenshotAnalyzer._upscale_and_convert_image_bw(img_crop)
-        if do_invert:
-            img_crop = ImageOps.invert(img_crop)
         config = "--psm 7 --oem 1 -c tessedit_char_whitelist=0123456789"
         text = pytesseract.image_to_string(img_crop, config=config).strip()
         try:
             return int(text)
         except ValueError:
+            level_img_phash = imagehash.phash(img_crop)
             print(f"Error when converting the text to str: '{text}'")
-            img_crop.show()
-            return 0
+            print(f"Read pHash: {level_img_phash}")
+            print(f"Trying to read it by pHash...")
+            return ScreenshotAnalyzer.find_level_phash(img_crop)
 
     @staticmethod
     def get_ocr_patch(img_crop: Image.Image) -> float:
@@ -269,7 +278,14 @@ class ScreenshotAnalyzer:
             return "C"
 
     @staticmethod
-    def calculate_patch(level: int, rank: str, is_plus: bool, judge: float) -> float:
+    def calculate_patch(
+        level: int,
+        rank: str,
+        is_plus: bool,
+        judge: float,
+        total_notes: int,
+        perfect_high: int,
+    ) -> float:
         """Calculates the P.A.T.C.H. value."""
         rank_ratio = {
             "C": 0.2,
@@ -290,6 +306,12 @@ class ScreenshotAnalyzer:
         patch_base = level * 42 * (judge / 100) * rank_ratio[rank]
         if is_plus:
             patch_base *= 1.02
+
+        # Calculate bonus PATCH
+        perfect_high_ratio = perfect_high / total_notes
+        # maximum
+        if perfect_high_ratio > 0.98:
+            perfect_high_ratio = 0.98
 
         # The game often rounds this value to two decimal places
         return round(patch_base, 2)
@@ -313,13 +335,33 @@ class ScreenshotAnalyzer:
         return perfect_high, perfect, great, good, miss
 
     @staticmethod
-    def _upscale_and_convert_image_bw(img: Image):
+    def ocr_preprocess(img: Image.Image, do_invert: bool = False):
+        """Do some preprocess (upscaling, binarization) for the best OCR result"""
         resized_img = img.resize(
             (img.width * 4, img.height * 4), Image.Resampling.LANCZOS
         )
         grayscale_img = resized_img.convert("L")
         bw_img = grayscale_img.point(lambda x: 255 if x > 200 else 0, "1")
+
+        if do_invert:
+            bw_img = ImageOps.invert(bw_img)
+
         return bw_img
+
+    @staticmethod
+    def find_level_phash(img: Image.Image):
+        given_hash = imagehash.phash(img)
+        level_hash_map = {5: "ec6495db9b249293", 9: "ec32954d93b2926d"}
+        closest_level = 0
+        closest_distance = float("inf")
+        for level, compare_hash in level_hash_map.items():
+            compare_hash = imagehash.hex_to_hash(compare_hash)
+            distance = compare_hash - given_hash
+            if distance < closest_distance:
+                closest_distance = distance
+                closest_level = level
+
+        return closest_level if closest_distance < 5 else 0
 
     # --- Main Execution Method ---
     def extract_info(self, image_path: str | None = None) -> AnalysisReport:
@@ -341,7 +383,7 @@ class ScreenshotAnalyzer:
 
         # --- 1. jacket and Song Match ---
         jacket_crop = self._crop_and_ocr(
-            img, "jacket", lambda x: x
+            img, "jacket", lambda x: x, no_preprocess=True
         )  # Pass crop back as PIL Image
         jacket_hash = imagehash.phash(jacket_crop)
         matched_song, match_distance = self.get_best_match_song(jacket_hash)
@@ -350,7 +392,9 @@ class ScreenshotAnalyzer:
         # Note: 'good' corresponds to the 'good' count in the stats.
         judge_rate_ocr = self._crop_and_ocr(img, "judge", self.get_ocr_judge)
         lines = self._crop_and_ocr(img, "line", self.get_ocr_line)
-        level_ocr = self._crop_and_ocr(img, "level", self.get_ocr_integer, do_invert=True)
+        level_ocr = self._crop_and_ocr(
+            img, "level", self.get_ocr_integer, do_invert=True
+        )
         patch_ocr = self._crop_and_ocr(img, "patch", self.get_ocr_patch)
         score_ocr = self._crop_and_ocr(img, "score", self.get_ocr_integer)
         total_notes = self._crop_and_ocr(img, "total_notes", self.get_ocr_integer)
@@ -359,6 +403,8 @@ class ScreenshotAnalyzer:
         great = self._crop_and_ocr(img, "great_y", self.get_ocr_integer)
         good = self._crop_and_ocr(img, "good_y", self.get_ocr_integer)
         miss = self._crop_and_ocr(img, "miss_y", self.get_ocr_integer)
+        rank_crop = self._crop_and_ocr(img, "rank", lambda x: x, no_preprocess=True)
+        rank_hash = imagehash.phash(rank_crop)
         perfect_high, perfect, great, good, miss = self.verify_notes_count(
             total_notes, perfect_high, perfect, great, good, miss
         )
@@ -378,10 +424,19 @@ class ScreenshotAnalyzer:
         )
         calculated_score = self.calculate_score(perfect_high, perfect, great)
         calculated_rank = self.calculate_rank(calculated_judge_rate)
+        # Try to find out if rank is F (bc F cannot be calculated...)
+        F_RANK_HASH = imagehash.hex_to_hash("a3636e1f941a1736")
+        if F_RANK_HASH - rank_hash < 5:
+            calculated_rank = "F"
 
         level_int = level_ocr
         calculated_patch = self.calculate_patch(
-            level_int, calculated_rank, is_plus_difficulty, calculated_judge_rate
+            level_int,
+            calculated_rank,
+            is_plus_difficulty,
+            calculated_judge_rate,
+            total_notes,
+            perfect_high,
         )
         available_levels = matched_song.get_available_levels(lines, difficulty_str)
         if len(available_levels) == 1:
@@ -428,7 +483,6 @@ def fetch_songs():
     # Build the Song objects
     songs = {}
     for song_data in songs_json:
-        # Assuming Song.__init__ is fixed to accept 'self' and correct keys
         song = Song(
             song_id=song_data.get("songID"),
             title=song_data.get("title"),
@@ -451,7 +505,6 @@ def fetch_songs():
                 designer=pattern_data.get("designer"),
             )
             songs[song_id].add_pattern(pattern)
-        # Warning print statement removed for cleaner refactor
 
     return list(songs.values())
 

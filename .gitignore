@@ -1,0 +1,11 @@
+# Python cache
+__pycache__/
+
+# IDE files
+.idea/
+
+# example image files
+example/
+
+# tesseract binary
+tesseract/

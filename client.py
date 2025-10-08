@@ -1,8 +1,10 @@
+import threading
 import time
 import tkinter as tk
 from tkinter import ttk
 
 from PIL import Image, ImageTk
+from pynput import keyboard
 
 from analyzer import ScreenshotAnalyzer, fetch_songs
 from models import AnalysisReport
@@ -11,12 +13,15 @@ from models import AnalysisReport
 class PlatinaArchiveClient:
     def __init__(self, app):
         self.app = app
-        app.title("PLATiNA::ARCHIVE Client v0.0.1")
+        app.title("PLATiNA::ARCHIVE Client v0.1.1")
         app.geometry("800x600")
         app.resizable(False, False)
 
         app.configure(bg="#E0E0E0")
+        app.protocol("WM_DELETE_WINDOW", self._on_close)
 
+        self.hotkey_listener = self._setup_global_hotkey()
+        self.hotkey_listener.start()
         self.analyzer = None
 
         self.top_frame = ttk.Frame(app, style="Top.TFrame")
@@ -95,8 +100,6 @@ class PlatinaArchiveClient:
         )
         self.analyze_button.pack(side=tk.BOTTOM, pady=5)
 
-        app.bind("<Alt-Insert>", self.run_analysis)
-
         self.log_message(
             "App started. Press Alt+PrtSc and then Alt-Inert to run analysis or press button"
         )
@@ -107,6 +110,28 @@ class PlatinaArchiveClient:
         )
         self.reload_db_button.pack(side=tk.BOTTOM, pady=5)
         self.load_db()
+
+    def _setup_global_hotkey(self):
+        """Setup the global hotkey <Alt+Insert>"""
+        hotkeys = {"<alt>+<insert>": self.run_analysis_thread}
+        return keyboard.GlobalHotKeys(hotkeys)
+
+    def run_analysis_thread(self):
+        """
+        Callback function for global hotkey
+        It launches the analysis in new thread to avoid freezing the GUI
+        """
+        thread = threading.Thread(target=self._execute_analysis)
+        thread.daemon = True
+        thread.start()
+
+    def _execute_analysis(self):
+        """Run the analysis"""
+        self.log_message("Hotkey detected...")
+        report = self.analyzer.extract_info()
+        self.app.after(
+            0, self.update_display, report
+        )  # Use tkinter's after method to ensure display update is on the main thread
 
     def load_db(self):
         # Fetch song data
@@ -161,6 +186,11 @@ class PlatinaArchiveClient:
             self.log_message(
                 f"Warning: Level {report.level} is NOT registered on DB. Result might be uncertain."
             )
+
+    def _on_close(self):
+        """Stops the global hotkey listener and closes the app"""
+        self.hotkey_listener.stop()
+        self.app.destroy()
 
     def run_analysis(self, event=None):
         self.log_message("Reading clipboard for image...")
