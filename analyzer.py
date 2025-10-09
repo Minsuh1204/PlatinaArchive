@@ -211,18 +211,15 @@ class ScreenshotAnalyzer:
             return ScreenshotAnalyzer.find_level_phash(img_crop)
 
     @staticmethod
-    def get_ocr_patch(img_crop: Image.Image) -> float:
+    def get_ocr_patch(img_crop: Image.Image, **kwargs) -> float:
         """OCR for patch value (e.g., 2.79)."""
-        config = r"--psm 7 -c tessedit_char_whitelist=0123456789.+"
-        text = (
-            pytesseract.image_to_string(img_crop, config=config)
-            .strip()
-            .replace("+", "")
-        )
+        config = "--psm 7 -c tessedit_char_whitelist=0123456789."
+        text = pytesseract.image_to_string(img_crop, config=config).strip()
 
         # Post-processing fix for patch if the decimal is missed
         if not "." in text and len(text) >= 3:
             text = text[: len(text) - 2] + "." + text[-2:]
+        print(f"OCR PATCH: '{text}'")
 
         try:
             return float(text)
@@ -283,8 +280,6 @@ class ScreenshotAnalyzer:
         rank: str,
         is_plus: bool,
         judge: float,
-        total_notes: int,
-        perfect_high: int,
     ) -> float:
         """Calculates the P.A.T.C.H. value."""
         rank_ratio = {
@@ -306,12 +301,6 @@ class ScreenshotAnalyzer:
         patch_base = level * 42 * (judge / 100) * rank_ratio[rank]
         if is_plus:
             patch_base *= 1.02
-
-        # Calculate bonus PATCH
-        perfect_high_ratio = perfect_high / total_notes
-        # maximum
-        if perfect_high_ratio > 0.98:
-            perfect_high_ratio = 0.98
 
         # The game often rounds this value to two decimal places
         return round(patch_base, 2)
@@ -351,7 +340,12 @@ class ScreenshotAnalyzer:
     @staticmethod
     def find_level_phash(img: Image.Image):
         given_hash = imagehash.phash(img)
-        level_hash_map = {5: "ec6495db9b249293", 9: "ec32954d93b2926d"}
+        level_hash_map = {
+            5: "ec6495db9b249293",
+            6: "eea5995a92ad9292",
+            8: "eead9552916d9292",
+            9: "ec32954d93b2926d",
+        }
         closest_level = 0
         closest_distance = float("inf")
         for level, compare_hash in level_hash_map.items():
@@ -395,7 +389,7 @@ class ScreenshotAnalyzer:
         level_ocr = self._crop_and_ocr(
             img, "level", self.get_ocr_integer, do_invert=True
         )
-        patch_ocr = self._crop_and_ocr(img, "patch", self.get_ocr_patch)
+        patch_ocr = self._crop_and_ocr(img, "patch", self.get_ocr_patch, do_invert=True)
         score_ocr = self._crop_and_ocr(img, "score", self.get_ocr_integer)
         total_notes = self._crop_and_ocr(img, "total_notes", self.get_ocr_integer)
         perfect_high = self._crop_and_ocr(img, "perfect_high_y", self.get_ocr_integer)
@@ -435,8 +429,6 @@ class ScreenshotAnalyzer:
             calculated_rank,
             is_plus_difficulty,
             calculated_judge_rate,
-            total_notes,
-            perfect_high,
         )
         available_levels = matched_song.get_available_levels(lines, difficulty_str)
         if len(available_levels) == 1:
@@ -444,6 +436,15 @@ class ScreenshotAnalyzer:
 
         is_full_combo = miss == 0
         is_perfect_decode = calculated_judge_rate == 100
+        is_maximum_patch = is_perfect_decode and perfect_high / total_notes >= 0.98
+
+        patch_distance = patch_ocr - calculated_patch
+        if -0.1 <= patch_distance <= 0.1:
+            calculated_patch = patch_ocr
+
+        # Switch to OCR patch because of bonus patch
+        if is_perfect_decode:
+            calculated_patch = patch_ocr
 
         # --- 5. Return Structured Report ---
         return AnalysisReport(
@@ -460,6 +461,7 @@ class ScreenshotAnalyzer:
             calculated_rank,
             is_full_combo,
             is_perfect_decode,
+            is_maximum_patch,
         )
 
 

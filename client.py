@@ -70,6 +70,12 @@ class PlatinaArchiveClient:
         )
         self.score_label.pack(anchor="w", pady=2)
 
+        # PATCH
+        self.patch_label = ttk.Label(
+            self.info_frame, text="", font=("Roboto", 12, "bold")
+        )
+        self.patch_label.pack(anchor="w", pady=2)
+
         # Lines and Difficulty (can be on one line or separate)
         self.lines_diff_label = ttk.Label(
             self.info_frame, text="", font=("Roboto", 12, "bold")
@@ -160,12 +166,15 @@ class PlatinaArchiveClient:
         # Update labels
         self.song_name_label.config(text=report.song.title)
         judge_text = f"Judge: {report.judge}% ({report.rank})"
-        if report.is_perfect_decode:
+        if report.is_maximum_patch:
+            judge_text += " [MAXIMUM PATCH]"
+        elif report.is_perfect_decode:
             judge_text += " [PERFECT DECODE]"
         elif report.is_full_combo:
             judge_text += " [FULL COMBO]"
         self.judge_rate_label.config(text=judge_text)
         self.score_label.config(text=f"Score: {report.score:,}")
+        self.patch_label.config(text=f"P.A.T.C.H.: {report.patch}")
         self.lines_diff_label.config(
             text=f"{report.line}L {report.difficulty} Lv.{report.level}"
         )
