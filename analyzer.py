@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import re
 import sys
 import time
 from typing import Dict, List, Optional
@@ -470,8 +469,8 @@ class ScreenshotAnalyzer:
 
 def fetch_songs():
     """Fetches song and pattern data from the API."""
-    songs_endpoint = "https://www.endeavy.dev/api/public/platina_songs"
-    patterns_endpoint = "https://www.endeavy.dev/api/public/platina_patterns"
+    songs_endpoint = "https://www.platina-archive.app/api/platina_songs"
+    patterns_endpoint = "https://www.platina-archive.app/api/platina_patterns"
 
     # Use POST method and check status
     res_songs = requests.post(songs_endpoint)

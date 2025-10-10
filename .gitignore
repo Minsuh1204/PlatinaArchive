@@ -9,3 +9,6 @@ example/
 
 # tesseract binary
 tesseract/
+
+# Environment file
+.env

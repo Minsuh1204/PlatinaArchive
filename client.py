@@ -1,12 +1,15 @@
+from __future__ import annotations
+
 import threading
 import time
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 
 from PIL import Image, ImageTk
 from pynput import keyboard
 
 from analyzer import ScreenshotAnalyzer, fetch_songs
+from login import _check_local_key, load_key_from_file, RegisterWindow
 from models import AnalysisReport
 
 
@@ -23,6 +26,8 @@ class PlatinaArchiveClient:
         self.hotkey_listener = self._setup_global_hotkey()
         self.hotkey_listener.start()
         self.analyzer = None
+        self.decoder_name = None
+        self.api_key = _check_local_key() or load_key_from_file()
 
         self.top_frame = ttk.Frame(app, style="Top.TFrame")
         self.top_frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=10)
@@ -115,7 +120,22 @@ class PlatinaArchiveClient:
             app, text="Reload song DB", command=self.load_db
         )
         self.reload_db_button.pack(side=tk.BOTTOM, pady=5)
+
+        if not self.api_key:
+            messagebox.showinfo(
+                "플라티나 아카이브 등록",
+                "새로운 디코더를 발견 했습니다, 이름과 비밀번호를 설정해주세요.",
+            )
+            RegisterWindow(self.app, self._handle_successful_register)
+        else:
+            self.decoder_name = self.api_key.split("::")[0]
+            self.log_message(f"Welcome, {self.decoder_name}")
         self.load_db()
+
+    def _handle_successful_register(self, name: str, api_key: str):
+        self.decoder_name = name
+        self.api_key = api_key
+        self.log_message(f"Register successful. Welcome, {name}")
 
     def _setup_global_hotkey(self):
         """Setup the global hotkey <Alt+Insert>"""
