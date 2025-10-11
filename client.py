@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+import requests
 import threading
 import time
 import tkinter as tk
@@ -8,9 +10,9 @@ from tkinter import ttk, messagebox
 from PIL import Image, ImageTk
 from pynput import keyboard
 
-from analyzer import ScreenshotAnalyzer, fetch_songs
+from analyzer import ScreenshotAnalyzer, fetch_archive, fetch_songs
 from login import _check_local_key, load_key_from_file, RegisterWindow
-from models import AnalysisReport
+from models import AnalysisReport, DecodeResult
 
 
 class PlatinaArchiveClient:
@@ -26,6 +28,7 @@ class PlatinaArchiveClient:
         self.hotkey_listener = self._setup_global_hotkey()
         self.hotkey_listener.start()
         self.analyzer = None
+        self.archive = None
         self.decoder_name = None
         self.api_key = _check_local_key() or load_key_from_file()
 
@@ -131,6 +134,7 @@ class PlatinaArchiveClient:
             self.decoder_name = self.api_key.split("::")[0]
             self.log_message(f"Welcome, {self.decoder_name}")
         self.load_db()
+        self.archive = fetch_archive(self.api_key)
 
     def _handle_successful_register(self, name: str, api_key: str):
         self.decoder_name = name
@@ -171,7 +175,9 @@ class PlatinaArchiveClient:
         self.analyzer = ScreenshotAnalyzer(song_data)
 
     def log_message(self, msg):
-        self.log_text.insert(tk.END, msg + "\n")
+        now = datetime.now()
+        structured_time = f"[{now.hour}:{now.minute}:{now.second}] "
+        self.log_text.insert(tk.END, structured_time + msg + "\n")
         self.log_text.see(tk.END)
 
     def update_display(self, report: AnalysisReport):
@@ -187,7 +193,7 @@ class PlatinaArchiveClient:
         self.song_name_label.config(text=report.song.title)
         judge_text = f"Judge: {report.judge}% ({report.rank})"
         if report.is_maximum_patch:
-            judge_text += " [MAXIMUM PATCH]"
+            judge_text += " [MAXIMUM P.A.T.C.H.]"
         elif report.is_perfect_decode:
             judge_text += " [PERFECT DECODE]"
         elif report.is_full_combo:
@@ -201,9 +207,8 @@ class PlatinaArchiveClient:
 
         # Log results
         self.log_message("--- Analysis Complete ---")
-        self.log_message(str(report))
-        self.log_message(f"Read hash: {report.jacket_hash}")
-        self.log_message(f"Match distance: {report.match_distance}")
+        # self.log_message(f"Read hash: {report.jacket_hash}")
+        # self.log_message(f"Match distance: {report.match_distance}")
         if report.match_distance > 5:
             self.log_message(
                 f"Warning: Jacket match distance {report.match_distance} is high. Result might be uncertain."
@@ -215,6 +220,109 @@ class PlatinaArchiveClient:
             self.log_message(
                 f"Warning: Level {report.level} is NOT registered on DB. Result might be uncertain."
             )
+
+        # Compare to user's archive
+        archive_key = (
+            f"{report.song.id}|{report.line}|{report.difficulty}|{report.level}"
+        )
+        utc_now = datetime.now(timezone.utc)
+        existing_archive = self.archive.get(
+            archive_key,
+            DecodeResult(
+                report.song.id,
+                report.line,
+                report.difficulty,
+                report.level,
+                0.0,
+                0,
+                0.0,
+                utc_now,
+                False,
+                False,
+            ),
+        )
+        if report.judge > existing_archive.judge:
+            self.log_higher_score_and_report(report, existing_archive)
+            return
+        elif report.judge == existing_archive.judge:
+            if report.score > existing_archive.score:
+                self.log_higher_score_and_report(report, existing_archive)
+                return
+            elif report.score == existing_archive.score:
+                if report.is_full_combo and not existing_archive.is_full_combo:
+                    self.log_higher_score_and_report(report, existing_archive)
+                    return
+        # Not a better score
+        dt = utc_now - existing_archive.decoded_at
+        dt_msg = f"{dt.days}일, {dt.seconds // 3600}시간 전"
+        self.log_message(f" [미갱신] {report.song.title} ({dt_msg})")
+        judge_msg = f"Best Judge: {existing_archive.judge}%"
+        if existing_archive.is_max_patch:
+            judge_msg += " [MAXIMUM P.A.T.C.H.]"
+        elif existing_archive.judge == 100:
+            judge_msg += " [PERFECT DECODE]"
+        elif existing_archive.is_full_combo:
+            judge_msg += " [FULL COMBO]"
+        self.log_message(judge_msg)
+        self.log_message(f"Best Score: {existing_archive.score}")
+        self.log_message(f"Best P.A.T.C.H.: {existing_archive.patch}")
+
+    def log_higher_score_and_report(
+        self, new_archive: AnalysisReport, existing_archive: DecodeResult
+    ):
+        self.log_message(f" [갱신] {new_archive.song.title}")
+        judge_msg = f"Judge: {existing_archive.judge}%"
+        if existing_archive.judge == 100:
+            judge_msg += " [PERFECT DECODE]"
+        elif existing_archive.is_full_combo:
+            judge_msg += " [FULL COMBO]"
+        judge_msg += f" -> {new_archive.judge}%"
+        if new_archive.is_maximum_patch:
+            judge_msg += " [MAXIMUM P.A.T.C.H.]"
+        elif new_archive.is_perfect_decode:
+            judge_msg += " [PERFECT DECODE]"
+        elif new_archive.is_full_combo:
+            judge_msg += " [FULL COMBO]"
+        djudge = round(new_archive.judge - existing_archive.judge, 4)
+        judge_msg += f" (+{djudge}%p)"
+
+        self.log_message(judge_msg)
+        dscore = new_archive.score - existing_archive.score
+        self.log_message(
+            f"Score: {existing_archive.score} -> {new_archive.score} (+{dscore})"
+        )
+        dpatch = round(new_archive.patch - existing_archive.patch, 2)
+        self.log_message(
+            f"P.A.T.C.H.: {existing_archive.patch} -> {new_archive.patch} (+{dpatch})"
+        )
+        # report higher score to the server
+        update_archive_endpoint = "https://www.platina-archive.app/api/update_archive"
+        new_archive_json = {"api_key": self.api_key} | new_archive.json()
+        requests.post(update_archive_endpoint, json=new_archive_json)
+        # update internal archive
+        archive_key = f"{new_archive.song.id}|{new_archive.line}|{new_archive.difficulty}|{new_archive.level}"
+        internal_archive = self.archive.get(
+            archive_key,
+            DecodeResult(
+                new_archive.song.id,
+                new_archive.line,
+                new_archive.difficulty,
+                new_archive.level,
+                0.0,
+                0,
+                0.0,
+                datetime.now(timezone.utc),
+                False,
+                False,
+            ),
+        )
+        internal_archive.judge = new_archive.judge
+        internal_archive.score = new_archive.score
+        internal_archive.patch = new_archive.patch
+        internal_archive.decoded_at = datetime.now(timezone.utc)
+        internal_archive.is_full_combo = new_archive.is_full_combo
+        internal_archive.is_max_patch = new_archive.is_maximum_patch
+        self.archive[archive_key] = internal_archive
 
     def _on_close(self):
         """Stops the global hotkey listener and closes the app"""

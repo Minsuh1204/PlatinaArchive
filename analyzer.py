@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 import os
 import sys
 import time
@@ -7,12 +8,13 @@ from typing import Dict, List, Optional
 
 import imagehash
 import pytesseract
+import pytz
 import requests
 from PIL import Image, ImageGrab, ImageOps
 
 # Assuming these are correctly defined in models.py with the 'self' fix
 # and AnalysisReport is a simple data class for results.
-from models import AnalysisReport, Pattern, Song
+from models import AnalysisReport, DecodeResult, Pattern, Song
 
 if getattr(sys, "frozen", False):
     base_dir = os.path.dirname(sys.executable)
@@ -218,7 +220,7 @@ class ScreenshotAnalyzer:
         # Post-processing fix for patch if the decimal is missed
         if not "." in text and len(text) >= 3:
             text = text[: len(text) - 2] + "." + text[-2:]
-        print(f"OCR PATCH: '{text}'")
+        # print(f"OCR PATCH: '{text}'")
 
         try:
             return float(text)
@@ -465,6 +467,35 @@ class ScreenshotAnalyzer:
 
 
 # --- INITIALIZATION AND EXECUTION ---
+
+
+def fetch_archive(api_key: str) -> dict[str, DecodeResult]:
+    archive_endpoint = "https://www.platina-archive.app/api/get_archive"
+    res = requests.post(archive_endpoint, json={"api_key": api_key})
+    archive_json = res.json()
+    archive = {}
+    for arc in archive_json:
+        song_id = arc.get("song_id")
+        line = arc.get("line")
+        difficulty = arc.get("difficulty")
+        level = arc.get("level")
+        key = f"{song_id}|{line}|{difficulty}|{level}"
+        naive_decoded_at = datetime.fromisoformat(arc.get("decoded_at"))
+        utc_tz = pytz.timezone("UTC")
+        aware_decoded_at = utc_tz.localize(naive_decoded_at)
+        archive[key] = DecodeResult(
+            song_id,
+            line,
+            difficulty,
+            level,
+            arc.get("judge"),
+            arc.get("score"),
+            arc.get("patch"),
+            aware_decoded_at,
+            arc.get("is_full_combo"),
+            arc.get("is_max_patch"),
+        )
+    return archive
 
 
 def fetch_songs():

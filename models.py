@@ -1,9 +1,100 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from imagehash import ImageHash
 from PIL import Image
+
+
+class DecodeResult:
+    def __init__(
+        self,
+        song_id: int,
+        line: Literal[4, 6],
+        difficulty: Literal["EASY", "HARD", "OVER", "PLUS"],
+        level: int,
+        judge: float,
+        score: int,
+        patch: float,
+        decoded_at: datetime,
+        is_full_combo: bool,
+        is_max_patch: bool,
+    ):
+        self._song_id = song_id
+        self._line = line
+        self._difficulty = difficulty
+        self._level = level
+        self._judge = judge
+        self._score = score
+        self._patch = patch
+        self._decoded_at = decoded_at
+        self._is_full_combo = is_full_combo
+        self._is_max_patch = is_max_patch
+
+    @property
+    def song_id(self):
+        return self._song_id
+
+    @property
+    def line(self):
+        return self._line
+
+    @property
+    def difficulty(self):
+        return self._difficulty
+
+    @property
+    def level(self):
+        return self._level
+
+    @property
+    def judge(self):
+        return self._judge
+
+    @judge.setter
+    def judge(self, new_judge: float):
+        self._judge = new_judge
+
+    @property
+    def score(self):
+        return self._score
+
+    @score.setter
+    def score(self, new_score: int):
+        self._score = new_score
+
+    @property
+    def patch(self):
+        return self._patch
+
+    @patch.setter
+    def patch(self, new_patch: float):
+        self._patch = new_patch
+
+    @property
+    def decoded_at(self):
+        return self._decoded_at
+
+    @decoded_at.setter
+    def decoded_at(self, new_decoded_at: datetime):
+        self._decoded_at = new_decoded_at
+
+    @property
+    def is_full_combo(self):
+        return self._is_full_combo
+
+    @is_full_combo.setter
+    def is_full_combo(self, new_is_full_combo: bool):
+        self._is_full_combo = new_is_full_combo
+
+    @property
+    def is_max_patch(self):
+        return self._is_max_patch
+
+    @is_max_patch.setter
+    def is_max_patch(self, new_is_max_patch: bool):
+        self._is_max_patch = new_is_max_patch
 
 
 class AnalysisReport:
@@ -41,6 +132,19 @@ class AnalysisReport:
 
     def __str__(self):
         return f"{self.song.title} - {self.song.artist} | {self.line}L {self.difficulty} Lv.{self.level}\nJudge: {self.judge}%\nScore: {self.score}\nP.A.T.C.H.: {self.patch}"
+
+    def json(self):
+        return {
+            "song_id": self.song.id,
+            "line": self.line,
+            "difficulty": self.difficulty,
+            "level": self.level,
+            "judge": self.judge,
+            "score": self.score,
+            "patch": self.patch,
+            "is_full_combo": self.is_full_combo,
+            "is_max_patch": self.is_maximum_patch,
+        }
 
     @property
     def song(self):
