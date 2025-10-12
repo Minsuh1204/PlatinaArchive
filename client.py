@@ -18,7 +18,7 @@ from models import AnalysisReport, DecodeResult
 class PlatinaArchiveClient:
     def __init__(self, app):
         self.app = app
-        app.title("PLATiNA::ARCHIVE Client v0.1.1")
+        app.title("PLATiNA::ARCHIVE Client v0.2.1")
         app.geometry("800x600")
         app.resizable(False, False)
 
@@ -264,7 +264,7 @@ class PlatinaArchiveClient:
         elif existing_archive.is_full_combo:
             judge_msg += " [FULL COMBO]"
         self.log_message(judge_msg)
-        self.log_message(f"Best Score: {existing_archive.score}")
+        self.log_message(f"Best Score: {existing_archive.score:,}")
         self.log_message(f"Best P.A.T.C.H.: {existing_archive.patch}")
 
     def log_higher_score_and_report(
@@ -289,7 +289,7 @@ class PlatinaArchiveClient:
         self.log_message(judge_msg)
         dscore = new_archive.score - existing_archive.score
         self.log_message(
-            f"Score: {existing_archive.score} -> {new_archive.score} (+{dscore})"
+            f"Score: {existing_archive.score:,} -> {new_archive.score:,} (+{dscore:,})"
         )
         dpatch = round(new_archive.patch - existing_archive.patch, 2)
         self.log_message(

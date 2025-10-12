@@ -4,7 +4,7 @@ from datetime import datetime
 import os
 import sys
 import time
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Literal
 
 import imagehash
 import pytesseract
@@ -29,24 +29,38 @@ os.environ["TESSDATA_PREFIX"] = os.path.join(base_dir, "tesseract", "tessdata")
 REF_W, REF_H = 1920, 1080
 
 ROI_CONFIG = {
-    # Bounding Boxes (x_start, y_start, x_end, y_end)
-    "jacket": (122, 193, 522, 593),
-    "judge": (959, 301, 1283, 367),
-    "line": (37, 32, 75, 81),
-    "level": (395, 700, 502, 762),
-    "patch": (979, 186, 1320, 251),
-    "score": (953, 418, 1316, 483),
-    "rank": (1020, 575, 1345, 890),
-    "notes_area": (874, 0, 950, 0),  # Placeholder for common X
-    # Notes Y-Coordinates (start_y, end_y) for fixed X (notes_area)
-    "total_notes": (589, 614),
-    "perfect_high_y": (650, 675),
-    "perfect_y": (686, 713),
-    "great_y": (725, 751),
-    "good_y": (764, 788),
-    "miss_y": (800, 828),
-    # Single Points (x, y)
-    "difficulty_color": (300, 730),
+    "SELECT": {
+        "jacket": (760, 66, 1160, 466),
+        "major_judge": (979, 846, 1015, 865),
+        "minor_judge": (1019, 848, 1059, 865),
+        "line": (143, 32, 361, 78),
+        "major_patch": (891, 741, 1026, 786),
+        "minor_patch": (1032, 752, 1078, 786),
+        "score": (961, 803, 1078, 826),
+        "full_combo": (1109, 867, 1320, 900),
+        "max_patch": (1033, 726),
+        "rank": (1151, 684, 1280, 812),
+    },
+    "RESULT": {
+        # Bounding Boxes (x_start, y_start, x_end, y_end)
+        "jacket": (122, 193, 522, 593),
+        "judge": (959, 301, 1283, 367),
+        "line": (37, 32, 75, 81),
+        "level": (395, 700, 502, 762),
+        "patch": (979, 186, 1320, 251),
+        "score": (953, 418, 1316, 483),
+        "rank": (1020, 575, 1345, 890),
+        "notes_area": (874, 0, 950, 0),  # Placeholder for common X
+        # Notes Y-Coordinates (start_y, end_y) for fixed X (notes_area)
+        "total_notes": (589, 614),
+        "perfect_high_y": (650, 675),
+        "perfect_y": (686, 713),
+        "great_y": (725, 751),
+        "good_y": (764, 788),
+        "miss_y": (800, 828),
+        # Single Points (x, y)
+        "difficulty_color": (300, 730),
+    },
 }
 
 # Use a dictionary for color templates for maintainability
@@ -103,9 +117,182 @@ class ScreenshotAnalyzer:
         abs_y = int(round(user_height * ratio_y))
         return abs_x, abs_y
 
+    @staticmethod
+    def determine_screen_type(screenshot: Image.Image) -> Literal["SELECT", "RESULT"]:
+        select_speed_start = (30, 908)
+        select_speed_end = (119, 932)
+        select_speed_crop = screenshot.crop(select_speed_start + select_speed_end)
+        select_speed_hash = imagehash.phash(select_speed_crop)
+        hashed_select_speed = "c0c73d38273ed2c3"
+        if select_speed_hash - imagehash.hex_to_hash(hashed_select_speed) < 5:
+            return "SELECT"
+        else:
+            return "RESULT"
+
+    @staticmethod
+    def read_selected_level_by_phash(img: Image.Image):
+        level_hash_map = {
+            5: "ea66a51ad2696497",
+            7: "eb4ae42dc42eb196",
+            15: "e87c8d02d369c697",
+            19: "e87a8d09cd699297",
+            21: "f26aad11d327849d",
+        }
+        phash = imagehash.phash(img)
+        print(phash)
+        for level, level_hash in level_hash_map.items():
+            level_hash = imagehash.hex_to_hash(level_hash)
+            if phash - level_hash < 3:
+                return level
+        return 0
+
+    @staticmethod
+    def is_pivot_pixel(rgb: tuple[int, int, int]):
+        # easy
+        if abs(rgb[0] - 231) < 5 and abs(rgb[1] - 136) < 5 and abs(rgb[2] - 40) < 5:
+            return "EASY"
+        elif abs(rgb[0] - 234) < 5 and abs(rgb[1] - 98) < 5 and abs(rgb[2] - 124) < 5:
+            return "HARD"
+        elif abs(rgb[0] - 146) < 5 and abs(rgb[1] - 115) < 5 and abs(rgb[2] - 254) < 5:
+            return "OVER"
+        elif abs(rgb[0] - 31) < 5 and abs(rgb[1] - 45) < 5 and abs(rgb[2] - 90) < 5:
+            return "PLUS"
+        else:
+            return None
+
+    def _analyze_select_screen(self, img: Image.Image) -> AnalysisReport:
+        screen_type = "SELECT"
+        # 1. Get Base Data (Jacket and Match Song)
+        jacket_crop = self._crop_and_ocr(
+            img, screen_type, "jacket", lambda x: x, no_preprocess=True
+        )
+        jacket_hash = imagehash.phash(jacket_crop)
+        matched_song, match_distance = self.get_best_match_song(jacket_hash)
+
+        if not matched_song:
+            return AnalysisReport(
+                song_name="UNKNOWN SONG (SELECT)",
+                jacket_image=jacket_crop,
+                match_distance=match_distance,
+            )
+
+        # 2. Extract Lines and Base Difficulty Color (if available on select screen)
+        line = self._crop_and_ocr(img, screen_type, "line", self.get_ocr_line)
+        score = self._crop_and_ocr(img, screen_type, "score", self.get_ocr_integer)
+        major_patch = self._crop_and_ocr(
+            img, screen_type, "major_patch", self.get_ocr_integer
+        )
+        minor_patch = self._crop_and_ocr(
+            img, screen_type, "minor_patch", self.get_ocr_integer
+        )
+        if minor_patch < 10:
+            minor_patch = f"0{minor_patch}"
+        patch = float(f"{major_patch}.{minor_patch}")
+
+        major_judge = self._crop_and_ocr(
+            img, screen_type, "major_judge", self.get_ocr_integer
+        )
+        minor_judge = self._crop_and_ocr(
+            img, screen_type, "minor_judge", self.get_ocr_integer
+        )
+        minor_judge = "0" * (4 - len(str(minor_judge))) + str(minor_judge)
+        judge = float(f"{major_judge}.{minor_judge}")
+
+        is_full_combo = False
+        is_perfect_decode = False
+        is_max_patch = False
+
+        # Iterate until it founds the arrow
+        pivot_x = 843
+        pivot_y = 627
+        pivot_found = False
+        while pivot_y < 1040:
+            abs_coords = self._get_abs_coords(
+                (pivot_x, pivot_y, pivot_x, pivot_y), img.size
+            )
+            pivot_pixel = img.getpixel((abs_coords[0], abs_coords[1]))
+            difficulty = self.is_pivot_pixel(pivot_pixel)
+            if difficulty:
+                pivot_found = True
+                level_start_x = pivot_x
+                if difficulty == "UNKNOWN":
+                    difficulty = "PLUS"
+                level_start_x = pivot_x - 105
+                level_start_y = pivot_y + 29
+                level_end_x = pivot_x
+                level_end_y = pivot_y + 95
+                level_abs_coords = self._get_abs_coords(
+                    (level_start_x, level_start_y, level_end_x, level_end_y), img.size
+                )
+                level_crop = img.crop(level_abs_coords)
+                level_crop = self.ocr_preprocess(level_crop, do_invert=True)
+                # level_crop.show()
+                level = self.get_ocr_integer(level_crop)
+                print(f"OCRed Level: {level}")
+                available_levels = matched_song.get_available_levels(line, difficulty)
+                if len(available_levels) == 1:
+                    level = available_levels[0]
+                if not level in available_levels:
+                    level = self.read_selected_level_by_phash(level_crop)
+                break
+            pivot_y += 1
+
+        if not pivot_found:
+            print("Pivot not found")
+
+        full_combo_crop = self._crop_and_ocr(
+            img, screen_type, "full_combo", lambda x: x, no_preprocess=True
+        )
+        hashed_full_combo = imagehash.hex_to_hash("8a82953d9d376b1a")
+        # full_combo_crop.show()
+        full_combo_hash = imagehash.phash(full_combo_crop)
+        if full_combo_hash - hashed_full_combo < 5:
+            is_full_combo = True
+
+        if judge == 100:
+            is_full_combo = True
+            is_perfect_decode = True
+
+        max_patch_pixel = img.getpixel(ROI_CONFIG[screen_type]["max_patch"])
+        if (
+            abs(max_patch_pixel[0] - 200) < 5
+            and abs(max_patch_pixel[1] - 111) < 5
+            and abs(max_patch_pixel[2] - 254) < 5
+        ):
+            is_max_patch = True
+
+        rank_crop = self._crop_and_ocr(
+            img, screen_type, "rank", lambda x: x, no_preprocess=True
+        )
+        # rank_crop.show()
+        rank_hash = imagehash.phash(rank_crop)
+        hashed_f_rank = imagehash.hex_to_hash("bb604083cfda63a7")
+
+        rank = self.calculate_rank(judge)
+        if rank_hash - hashed_f_rank < 5:
+            rank = "F"
+        # 4. Return Report (Use N/A for missing result screen stats)
+        return AnalysisReport(
+            matched_song,
+            score,
+            judge,
+            patch,
+            line,
+            difficulty,
+            level,
+            jacket_crop,
+            jacket_hash,
+            match_distance,
+            rank,
+            is_full_combo,
+            is_perfect_decode,
+            is_max_patch,
+        )
+
     def _crop_and_ocr(
         self,
-        img: Image,
+        img: Image.Image,
+        screen_type: Literal["SELECT", "RESULT"],
         config_key: str,
         ocr_func,
         is_point=False,
@@ -113,16 +300,15 @@ class ScreenshotAnalyzer:
         **kwargs,
     ):
         """Helper to handle scaling, cropping, and running OCR."""
-        ref_coords = ROI_CONFIG[config_key]
         size = img.size
-
+        ref_coords = ROI_CONFIG[screen_type][config_key]
         if is_point:
             rx, ry = self._ratio(ref_coords[0], ref_coords[1])
             abs_x, abs_y = self._scale_coordinate(rx, ry, size)
             return ocr_func(img, abs_x, abs_y, **kwargs)  # Call color/point function
 
         # Handle notes area with common X but separate Y
-        if config_key in [
+        elif config_key in [
             "perfect_high_y",
             "perfect_y",
             "great_y",
@@ -130,7 +316,7 @@ class ScreenshotAnalyzer:
             "miss_y",
             "total_notes",
         ]:
-            notes_x = ROI_CONFIG["notes_area"]
+            notes_x = ROI_CONFIG[screen_type]["notes_area"]
             rx0, rxf = self._ratio(notes_x[0], 0)[0], self._ratio(notes_x[2], 0)[0]
             ry0, ryf = (
                 self._ratio(0, ref_coords[0])[1],
@@ -226,6 +412,20 @@ class ScreenshotAnalyzer:
             return float(text)
         except ValueError:
             return 0.0
+
+    def _get_abs_coords(self, coords: tuple[int, int, int, int], size: tuple[int, int]):
+        rx1, ry1 = self._ratio(coords[0], coords[1])
+        rx2, ry2 = self._ratio(coords[2], coords[3])
+        abs_x1, abs_y1 = self._scale_coordinate(rx1, ry1, size)
+        abs_x2, abs_y2 = self._scale_coordinate(rx2, ry2, size)
+        return abs_x1, abs_y1, abs_x2, abs_y2
+
+    @staticmethod
+    def get_ocr_difficulty_text(
+        img_crop: Image.Image,
+    ) -> Literal["EASY", "HARD", "OVER", "PLUS"]:
+        config = "--psm 8 -c tessedit_char_whitelist=EASYHRDOVPLUS"
+        return pytesseract.image_to_string(img_crop, config=config)
 
     @staticmethod
     def get_difficulty(r: int, g: int, b: int) -> str:
@@ -370,35 +570,52 @@ class ScreenshotAnalyzer:
         except FileNotFoundError:
             print(f"Error: File not found at {image_path}")
             return AnalysisReport(song_name="FILE NOT FOUND")
-
         if img is None:
             print("Error: Clipboard is empty or does not contain an image.")
             # Return an empty report to prevent the crash
             return AnalysisReport(song_name="NO IMAGE")
 
+        screen_type = self.determine_screen_type(img)
+
+        if screen_type == "SELECT":
+            return self._analyze_select_screen(img)
+
         # --- 1. jacket and Song Match ---
         jacket_crop = self._crop_and_ocr(
-            img, "jacket", lambda x: x, no_preprocess=True
+            img, screen_type, "jacket", lambda x: x, no_preprocess=True
         )  # Pass crop back as PIL Image
         jacket_hash = imagehash.phash(jacket_crop)
         matched_song, match_distance = self.get_best_match_song(jacket_hash)
 
         # --- 2. OCR Extraction ---
         # Note: 'good' corresponds to the 'good' count in the stats.
-        judge_rate_ocr = self._crop_and_ocr(img, "judge", self.get_ocr_judge)
-        lines = self._crop_and_ocr(img, "line", self.get_ocr_line)
-        level_ocr = self._crop_and_ocr(
-            img, "level", self.get_ocr_integer, do_invert=True
+
+        judge_rate_ocr = self._crop_and_ocr(
+            img, screen_type, "judge", self.get_ocr_judge
         )
-        patch_ocr = self._crop_and_ocr(img, "patch", self.get_ocr_patch, do_invert=True)
-        score_ocr = self._crop_and_ocr(img, "score", self.get_ocr_integer)
-        total_notes = self._crop_and_ocr(img, "total_notes", self.get_ocr_integer)
-        perfect_high = self._crop_and_ocr(img, "perfect_high_y", self.get_ocr_integer)
-        perfect = self._crop_and_ocr(img, "perfect_y", self.get_ocr_integer)
-        great = self._crop_and_ocr(img, "great_y", self.get_ocr_integer)
-        good = self._crop_and_ocr(img, "good_y", self.get_ocr_integer)
-        miss = self._crop_and_ocr(img, "miss_y", self.get_ocr_integer)
-        rank_crop = self._crop_and_ocr(img, "rank", lambda x: x, no_preprocess=True)
+        lines = self._crop_and_ocr(img, screen_type, "line", self.get_ocr_line)
+        level_ocr = self._crop_and_ocr(
+            img, screen_type, "level", self.get_ocr_integer, do_invert=True
+        )
+        patch_ocr = self._crop_and_ocr(
+            img, screen_type, "patch", self.get_ocr_patch, do_invert=True
+        )
+        score_ocr = self._crop_and_ocr(img, screen_type, "score", self.get_ocr_integer)
+        total_notes = self._crop_and_ocr(
+            img, screen_type, "total_notes", self.get_ocr_integer
+        )
+        perfect_high = self._crop_and_ocr(
+            img, screen_type, "perfect_high_y", self.get_ocr_integer
+        )
+        perfect = self._crop_and_ocr(
+            img, screen_type, "perfect_y", self.get_ocr_integer
+        )
+        great = self._crop_and_ocr(img, screen_type, "great_y", self.get_ocr_integer)
+        good = self._crop_and_ocr(img, screen_type, "good_y", self.get_ocr_integer)
+        miss = self._crop_and_ocr(img, screen_type, "miss_y", self.get_ocr_integer)
+        rank_crop = self._crop_and_ocr(
+            img, screen_type, "rank", lambda x: x, no_preprocess=True
+        )
         rank_hash = imagehash.phash(rank_crop)
         perfect_high, perfect, great, good, miss = self.verify_notes_count(
             total_notes, perfect_high, perfect, great, good, miss
