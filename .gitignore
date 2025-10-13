@@ -12,3 +12,6 @@ tesseract/
 
 # Environment file
 .env
+
+# App DB cache
+.platina-cache/

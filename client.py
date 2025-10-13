@@ -14,11 +14,13 @@ from analyzer import ScreenshotAnalyzer, fetch_archive, fetch_songs
 from login import _check_local_key, load_key_from_file, RegisterWindow
 from models import AnalysisReport, DecodeResult
 
+VERSION = (0, 2, 2)
+
 
 class PlatinaArchiveClient:
     def __init__(self, app):
         self.app = app
-        app.title("PLATiNA::ARCHIVE Client v0.2.1")
+        app.title(f"PLATiNA::ARCHIVE Client v{VERSION[0]}.{VERSION[1]}.{VERSION[2]}")
         app.geometry("800x600")
         app.resizable(False, False)
 
@@ -296,7 +298,9 @@ class PlatinaArchiveClient:
             f"P.A.T.C.H.: {existing_archive.patch} -> {new_archive.patch} (+{dpatch})"
         )
         # report higher score to the server
-        update_archive_endpoint = "https://www.platina-archive.app/api/update_archive"
+        update_archive_endpoint = (
+            "https://www.platina-archive.app/api/v1/update_archive"
+        )
         new_archive_json = {"api_key": self.api_key} | new_archive.json()
         requests.post(update_archive_endpoint, json=new_archive_json)
         # update internal archive

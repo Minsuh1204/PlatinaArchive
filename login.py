@@ -62,7 +62,7 @@ class RegisterWindow(tk.Toplevel):
     def attempt_register(self):
         name = self.name_entry.get().strip()
         password = self.password_entry.get().strip()
-        register_endpoint = "https://www.platina-archive.app/api/register"
+        register_endpoint = "https://www.platina-archive.app/api/v1/register"
 
         if not name or not password:
             messagebox.showerror("Error", "이름과 비밀번호는 공백일 수 없습니다.")

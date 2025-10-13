@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import json
 import os
 import sys
 import time
@@ -17,10 +18,10 @@ from PIL import Image, ImageGrab, ImageOps
 from models import AnalysisReport, DecodeResult, Pattern, Song
 
 if getattr(sys, "frozen", False):
-    base_dir = os.path.dirname(sys.executable)
+    BASEDIR = os.path.dirname(sys.executable)
 else:
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-os.environ["TESSDATA_PREFIX"] = os.path.join(base_dir, "tesseract", "tessdata")
+    BASEDIR = os.path.dirname(os.path.abspath(__file__))
+os.environ["TESSDATA_PREFIX"] = os.path.join(BASEDIR, "tesseract", "tessdata")
 
 # --- CONFIGURATION CONSTANTS ---
 # Use one dictionary for all ROI ratios for better maintainability.
@@ -82,7 +83,7 @@ class ScreenshotAnalyzer:
     """
 
     def __init__(self, song_database: List[Song]):
-        tesseract_exe_path = os.path.join(base_dir, "tesseract", "tesseract.exe")
+        tesseract_exe_path = os.path.join(BASEDIR, "tesseract", "tesseract.exe")
         pytesseract.pytesseract.tesseract_cmd = tesseract_exe_path
         self.song_db: Dict[int, Song] = {song.id: song for song in song_database}
         self.jacket_hash_map: Dict[str, Song] = self._build_jacket_hash_map()
@@ -687,7 +688,7 @@ class ScreenshotAnalyzer:
 
 
 def fetch_archive(api_key: str) -> dict[str, DecodeResult]:
-    archive_endpoint = "https://www.platina-archive.app/api/get_archive"
+    archive_endpoint = "https://www.platina-archive.app/api/v1/get_archive"
     res = requests.post(archive_endpoint, json={"api_key": api_key})
     archive_json = res.json()
     archive = {}
@@ -717,17 +718,53 @@ def fetch_archive(api_key: str) -> dict[str, DecodeResult]:
 
 def fetch_songs():
     """Fetches song and pattern data from the API."""
-    songs_endpoint = "https://www.platina-archive.app/api/platina_songs"
-    patterns_endpoint = "https://www.platina-archive.app/api/platina_patterns"
+    songs_endpoint = "https://www.platina-archive.app/api/v1/platina_songs"
+    patterns_endpoint = "https://www.platina-archive.app/api/v1/platina_patterns"
+
+    # check local storage
+    CACHE_DIR = os.path.join(BASEDIR, ".platina-cache")
+    CACHE_DB_PATH = os.path.join(CACHE_DIR, "db.json")
+    songs_headers = {}
+    patterns_headers = {}
+    cached_db = {}
+    needs_update = False
+
+    if os.path.isfile(CACHE_DB_PATH):
+        with open(CACHE_DB_PATH, "r") as f:
+            cached_db = json.load(f)
+        songs_last_modified = cached_db["Songs-Last-Modified"]
+        patterns_last_modified = cached_db["Patterns-Last-Modified"]
+        songs_headers = {"If-Modified-Since": songs_last_modified}
+        patterns_headers = {"If-Modified-Since": patterns_last_modified}
 
     # Use POST method and check status
-    res_songs = requests.post(songs_endpoint)
-    res_patterns = requests.post(patterns_endpoint)
+    res_songs = requests.get(songs_endpoint, headers=songs_headers)
+    res_patterns = requests.get(patterns_endpoint, headers=patterns_headers)
     res_songs.raise_for_status()
     res_patterns.raise_for_status()
 
-    songs_json = res_songs.json()
-    patterns_json = res_patterns.json()
+    if res_songs.status_code == 304:
+        songs_json = cached_db["songs"]
+    else:
+        songs_json = res_songs.json()
+        new_songs_last_modified = res_songs.headers.get("Last-Modified")
+        cached_db["songs"] = songs_json
+        cached_db["Songs-Last-Modified"] = new_songs_last_modified
+        needs_update = True
+
+    if res_patterns.status_code == 304:
+        patterns_json = cached_db["patterns"]
+    else:
+        patterns_json = res_patterns.json()
+        new_patterns_last_modified = res_patterns.headers.get("Last-Modified")
+        cached_db["patterns"] = patterns_json
+        cached_db["Patterns-Last-Modified"] = new_patterns_last_modified
+        needs_update = True
+
+    if needs_update:
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        with open(CACHE_DB_PATH, "w") as f:
+            json.dump(cached_db, f)
 
     # Build the Song objects
     songs = {}
