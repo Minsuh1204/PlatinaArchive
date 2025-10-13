@@ -14,7 +14,7 @@ from analyzer import ScreenshotAnalyzer, fetch_archive, fetch_songs
 from login import _check_local_key, load_key_from_file, RegisterWindow
 from models import AnalysisReport, DecodeResult
 
-VERSION = (0, 2, 2)
+VERSION = (0, 2, 3)
 
 
 class PlatinaArchiveClient:

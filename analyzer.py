@@ -625,7 +625,7 @@ class ScreenshotAnalyzer:
         # --- 3. Difficulty Color Check ---
         r, g, b = img.getpixel(
             self._scale_coordinate(
-                *self._ratio(*ROI_CONFIG["difficulty_color"]), img.size
+                *self._ratio(*ROI_CONFIG[screen_type]["difficulty_color"]), img.size
             )
         )
         difficulty_str = self.get_difficulty(r, g, b)
