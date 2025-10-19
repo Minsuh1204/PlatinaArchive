@@ -6,6 +6,7 @@ import threading
 import time
 import tkinter as tk
 from tkinter import ttk, messagebox
+import math
 
 from PIL import Image, ImageTk
 from pynput import keyboard
@@ -257,7 +258,9 @@ class PlatinaArchiveClient:
         # Not a better score
         dt = utc_now - existing_archive.decoded_at
         dt_msg = f"{dt.days}일, {dt.seconds // 3600}시간 전"
-        self.log_message(f" [미갱신] {report.song.title} ({dt_msg})")
+        self.log_message(
+            f" [미갱신] {report.song.title} {report.line}L {report.difficulty} Lv.{report.level} ({dt_msg})"
+        )
         judge_msg = f"Best Judge: {existing_archive.judge}%"
         if existing_archive.is_max_patch:
             judge_msg += " [MAXIMUM P.A.T.C.H.]"
@@ -272,7 +275,9 @@ class PlatinaArchiveClient:
     def log_higher_score_and_report(
         self, new_archive: AnalysisReport, existing_archive: DecodeResult
     ):
-        self.log_message(f" [갱신] {new_archive.song.title}")
+        self.log_message(
+            f" [갱신] {new_archive.song.title} {new_archive.line}L {new_archive.difficulty} Lv.{new_archive.level}"
+        )
         judge_msg = f"Judge: {existing_archive.judge}%"
         if existing_archive.judge == 100:
             judge_msg += " [PERFECT DECODE]"
@@ -290,13 +295,26 @@ class PlatinaArchiveClient:
 
         self.log_message(judge_msg)
         dscore = new_archive.score - existing_archive.score
-        self.log_message(
-            f"Score: {existing_archive.score:,} -> {new_archive.score:,} (+{dscore:,})"
-        )
+        if dscore >= 0:
+            self.log_message(
+                f"Score: {existing_archive.score:,} -> {new_archive.score:,} (+{dscore:,})"
+            )
+        else:
+            self.log_message(
+                f"Score: {existing_archive.score:,} -> {new_archive.score:,} ({dscore:,})"
+            )
         dpatch = round(new_archive.patch - existing_archive.patch, 2)
         self.log_message(
             f"P.A.T.C.H.: {existing_archive.patch} -> {new_archive.patch} (+{dpatch})"
         )
+        if (
+            new_archive.is_perfect_decode
+            and not new_archive.total_notes == 0
+            and not new_archive.is_maximum_patch
+        ):
+            theoretical_perfect_high = math.ceil(new_archive.total_notes * 0.98)
+            need_perfect_high = theoretical_perfect_high - new_archive.perfect_high
+            self.log_message(f"패론치까지 단 {need_perfect_high}개!")
         # report higher score to the server
         update_archive_endpoint = (
             "https://www.platina-archive.app/api/v1/update_archive"

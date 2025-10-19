@@ -114,6 +114,8 @@ class AnalysisReport:
         is_full_combo: bool,
         is_perfect_decode: bool,
         is_maximum_patch: bool,
+        total_notes: int = 0,
+        perfect_high: int = 0,
     ):
         self._song = song
         self._score = score
@@ -129,6 +131,8 @@ class AnalysisReport:
         self._is_full_combo = is_full_combo
         self._is_perfect_decode = is_perfect_decode
         self._is_maximum_patch = is_maximum_patch
+        self._total_notes = total_notes
+        self._perfect_high = perfect_high
 
     def __str__(self):
         return f"{self.song.title} - {self.song.artist} | {self.line}L {self.difficulty} Lv.{self.level}\nJudge: {self.judge}%\nScore: {self.score}\nP.A.T.C.H.: {self.patch}"
@@ -201,6 +205,14 @@ class AnalysisReport:
     @property
     def is_maximum_patch(self):
         return self._is_maximum_patch
+
+    @property
+    def total_notes(self):
+        return self._total_notes
+
+    @property
+    def perfect_high(self):
+        return self._perfect_high
 
 
 class Pattern:

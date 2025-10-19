@@ -167,6 +167,7 @@ class ScreenshotAnalyzer:
         jacket_crop = self._crop_and_ocr(
             img, screen_type, "jacket", lambda x: x, no_preprocess=True
         )
+        # jacket_crop.save("out.png")
         jacket_hash = imagehash.phash(jacket_crop)
         matched_song, match_distance = self.get_best_match_song(jacket_hash)
 
@@ -681,6 +682,8 @@ class ScreenshotAnalyzer:
             is_full_combo,
             is_perfect_decode,
             is_maximum_patch,
+            total_notes,
+            perfect_high,
         )
 
 
