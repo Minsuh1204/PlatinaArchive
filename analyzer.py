@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-from datetime import datetime
 import json
 import os
 import sys
 import time
-from typing import Dict, List, Optional, Literal
+from datetime import datetime, timezone
+from typing import Literal, Optional
 
 import imagehash
 import pytesseract
-import pytz
 import requests
 from PIL import Image, ImageGrab, ImageOps
 
@@ -82,16 +81,16 @@ class ScreenshotAnalyzer:
     Manages the data fetching, scaling, OCR, and analysis logic.
     """
 
-    def __init__(self, song_database: List[Song]):
+    def __init__(self, song_database: list[Song]):
         tesseract_exe_path = os.path.join(BASEDIR, "tesseract", "tesseract.exe")
         pytesseract.pytesseract.tesseract_cmd = tesseract_exe_path
-        self.song_db: Dict[int, Song] = {song.id: song for song in song_database}
-        self.jacket_hash_map: Dict[str, Song] = self._build_jacket_hash_map()
+        self.song_db: dict[int, Song] = {song.id: song for song in song_database}
+        self.jacket_hash_map: dict[str, Song] = self._build_jacket_hash_map()
         self.PHASH_THRESHOLD = 5
 
     # --- Setup Methods ---
 
-    def _build_jacket_hash_map(self) -> Dict[str, Song]:
+    def _build_jacket_hash_map(self) -> dict[str, Song]:
         """Creates a map of pHash strings to Song objects for quick lookup."""
         hash_map = {}
         for song in self.song_db.values():
@@ -182,10 +181,10 @@ class ScreenshotAnalyzer:
         line = self._crop_and_ocr(img, screen_type, "line", self.get_ocr_line)
         score = self._crop_and_ocr(img, screen_type, "score", self.get_ocr_integer)
         major_patch = self._crop_and_ocr(
-            img, screen_type, "major_patch", self.get_ocr_integer
+            img, screen_type, "major_patch", self.get_ocr_select_major_patch
         )
         minor_patch = self._crop_and_ocr(
-            img, screen_type, "minor_patch", self.get_ocr_integer
+            img, screen_type, "minor_patch", self.get_ocr_select_minor_patch
         )
         if minor_patch < 10:
             minor_patch = f"0{minor_patch}"
@@ -195,7 +194,7 @@ class ScreenshotAnalyzer:
             img, screen_type, "major_judge", self.get_ocr_integer
         )
         minor_judge = self._crop_and_ocr(
-            img, screen_type, "minor_judge", self.get_ocr_integer
+            img, screen_type, "minor_judge", self.get_ocr_select_minor_judge
         )
         minor_judge = "0" * (4 - len(str(minor_judge))) + str(minor_judge)
         judge = float(f"{major_judge}.{minor_judge}")
@@ -398,6 +397,83 @@ class ScreenshotAnalyzer:
             print(f"Read pHash: {level_img_phash}")
             print(f"Trying to read it by pHash...")
             return ScreenshotAnalyzer.find_level_phash(img_crop)
+
+    @staticmethod
+    def get_ocr_select_major_patch(img_crop: Image.Image, **kwargs) -> int:
+        config = "--psm 7 --oem 1 -c tessedit_char_whitelist=0123456789"
+        text = pytesseract.image_to_string(img_crop, config=config).strip()
+        phash = imagehash.phash(img_crop)
+        print(f"Major Patch PHash: {phash}")
+        phash_map = {
+            609: "f3738c6596f2218c",
+            610: "f3738e6696a3218c",
+            627: "e151ca6616e93b9c",
+            637: "e1518e6216e52f9e",
+            641: "f3f19a622c93698c",
+            642: "f371966a2ad2658c",
+            661: "e3619a63af61619c",
+            670: "f3698c662cb3338c",
+            671: "f3698c662cf3138c",
+            676: "f36b8c6405f2738c",
+        }
+        lowest_distance = 50
+        possible_patch = ""
+        for patch, known_phash in phash_map.items():
+            known_phash = imagehash.hex_to_hash(known_phash)
+            distance = phash - known_phash
+            if distance < lowest_distance:
+                lowest_distance = distance
+                possible_patch = patch
+        if lowest_distance < 3:
+            return possible_patch
+        try:
+            return int(text)
+        except ValueError:
+            return 0
+
+    @staticmethod
+    def get_ocr_select_minor_patch(img_crop: Image.Image, **kwargs) -> int:
+        config = "--psm 7 --oem 1 -c tessedit_char_whitelist=0123456789"
+        text = pytesseract.image_to_string(img_crop, config=config).strip()
+        phash = imagehash.phash(img_crop)
+        print(f"Minor Patch PHash: {phash}")
+        phash_map = {22: "ae78d02f0dac78d2", 88: "aa2ad5ad52cc2cd3"}
+        lowest_distance = 50
+        possible_patch = ""
+        for patch, known_phash in phash_map.items():
+            known_phash = imagehash.hex_to_hash(known_phash)
+            distance = phash - known_phash
+            if distance < lowest_distance:
+                lowest_distance = distance
+                possible_patch = patch
+        if lowest_distance < 3:
+            return possible_patch
+        try:
+            return int(text)
+        except ValueError:
+            return 0
+
+    @staticmethod
+    def get_ocr_select_minor_judge(img_crop: Image.Image, **kwargs) -> int:
+        config = "--psm 7 --oem 1 -c tessedit_char_whitelist=0123456789"
+        text = pytesseract.image_to_string(img_crop, config=config).strip()
+        phash = imagehash.phash(img_crop)
+        print(f"Minor Judge PHash: {phash}")
+        phash_map = {5277: "9dc1aabc8183ec3b", 5572: "9be4e6ea9110ee13"}
+        lowest_distance = 50
+        possible_patch = ""
+        for patch, known_phash in phash_map.items():
+            known_phash = imagehash.hex_to_hash(known_phash)
+            distance = phash - known_phash
+            if distance < lowest_distance:
+                lowest_distance = distance
+                possible_patch = patch
+        if lowest_distance < 3:
+            return possible_patch
+        try:
+            return int(text)
+        except ValueError:
+            return 0
 
     @staticmethod
     def get_ocr_patch(img_crop: Image.Image, **kwargs) -> float:
@@ -690,6 +766,10 @@ class ScreenshotAnalyzer:
 # --- INITIALIZATION AND EXECUTION ---
 
 
+def version_to_string(version: tuple[int, int, int]):
+    return f"v{version[0]}.{version[1]}.{version[2]}"
+
+
 def fetch_archive(api_key: str) -> dict[str, DecodeResult]:
     archive_endpoint = "https://www.platina-archive.app/api/v1/get_archive"
     res = requests.post(archive_endpoint, json={"api_key": api_key})
@@ -701,9 +781,9 @@ def fetch_archive(api_key: str) -> dict[str, DecodeResult]:
         difficulty = arc.get("difficulty")
         level = arc.get("level")
         key = f"{song_id}|{line}|{difficulty}|{level}"
-        naive_decoded_at = datetime.fromisoformat(arc.get("decoded_at"))
-        utc_tz = pytz.timezone("UTC")
-        aware_decoded_at = utc_tz.localize(naive_decoded_at)
+        decoded_at = datetime.fromisoformat(arc.get("decoded_at")).astimezone(
+            timezone.utc
+        )
         archive[key] = DecodeResult(
             song_id,
             line,
@@ -712,11 +792,20 @@ def fetch_archive(api_key: str) -> dict[str, DecodeResult]:
             arc.get("judge"),
             arc.get("score"),
             arc.get("patch"),
-            aware_decoded_at,
+            decoded_at,
             arc.get("is_full_combo"),
             arc.get("is_max_patch"),
         )
     return archive
+
+
+def fetch_latest_client_version() -> tuple[int, int, int]:
+    """Fetch the latest client version"""
+    client_version_endpoint = "https://www.platina-archive.app/api/v1/client_version"
+    res = requests.get(client_version_endpoint)
+    res.raise_for_status()
+    data = res.json()
+    return (data["major"], data["minor"], data["patch"])
 
 
 def fetch_songs():
@@ -725,18 +814,20 @@ def fetch_songs():
     patterns_endpoint = "https://www.platina-archive.app/api/v1/platina_patterns"
 
     # check local storage
-    CACHE_DIR = os.path.join(BASEDIR, ".platina-cache")
-    CACHE_DB_PATH = os.path.join(CACHE_DIR, "db.json")
+    DEFAULT_DATE = datetime(2025, 4, 10).isoformat()  # Date that needs update
+    APPDATA_ROAMING = os.environ.get("APPDATA", os.path.expanduser("~"))
+    CACHE_DIR = os.path.join(APPDATA_ROAMING, "PLATiNA-ARCHiVE", "cache")
+    CACHED_DB_PATH = os.path.join(CACHE_DIR, "db.json")
     songs_headers = {}
     patterns_headers = {}
     cached_db = {}
     needs_update = False
 
-    if os.path.isfile(CACHE_DB_PATH):
-        with open(CACHE_DB_PATH, "r") as f:
+    if os.path.isfile(CACHED_DB_PATH):
+        with open(CACHED_DB_PATH, "r") as f:
             cached_db = json.load(f)
-        songs_last_modified = cached_db["Songs-Last-Modified"]
-        patterns_last_modified = cached_db["Patterns-Last-Modified"]
+        songs_last_modified = cached_db.get("Songs-Last-Modified", DEFAULT_DATE)
+        patterns_last_modified = cached_db.get("Patterns-Last-Modified", DEFAULT_DATE)
         songs_headers = {"If-Modified-Since": songs_last_modified}
         patterns_headers = {"If-Modified-Since": patterns_last_modified}
 
@@ -766,7 +857,7 @@ def fetch_songs():
 
     if needs_update:
         os.makedirs(CACHE_DIR, exist_ok=True)
-        with open(CACHE_DB_PATH, "w") as f:
+        with open(CACHED_DB_PATH, "w") as f:
             json.dump(cached_db, f)
 
     # Build the Song objects

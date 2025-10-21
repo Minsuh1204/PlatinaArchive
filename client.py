@@ -1,29 +1,47 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-import requests
+import math
+import sys
+import os
 import threading
 import time
 import tkinter as tk
-from tkinter import ttk, messagebox
-import math
+from datetime import datetime, timezone
+from tkinter import messagebox, ttk
 
+import requests
 from PIL import Image, ImageTk
 from pynput import keyboard
 
-from analyzer import ScreenshotAnalyzer, fetch_archive, fetch_songs
-from login import _check_local_key, load_key_from_file, RegisterWindow
+from analyzer import (
+    ScreenshotAnalyzer,
+    fetch_archive,
+    fetch_songs,
+    fetch_latest_client_version,
+    version_to_string,
+)
+from login import RegisterWindow, _check_local_key, load_key_from_file
 from models import AnalysisReport, DecodeResult
 
-VERSION = (0, 2, 3)
+VERSION = (0, 2, 5)
+current_version_str = version_to_string(VERSION)
+if getattr(sys, "frozen", False):
+    BASEDIR = os.path.dirname(sys.executable)
+else:
+    BASEDIR = os.path.dirname(os.path.abspath(__file__))
 
 
 class PlatinaArchiveClient:
     def __init__(self, app):
         self.app = app
-        app.title(f"PLATiNA::ARCHIVE Client v{VERSION[0]}.{VERSION[1]}.{VERSION[2]}")
+        app.title(f"PLATiNA::ARCHIVE Client {current_version_str}")
         app.geometry("800x600")
         app.resizable(False, False)
+
+        # Set app icon
+        icon_path = os.path.join(BASEDIR, "icon.ico")
+        if os.path.exists(icon_path):
+            self.app.iconbitmap(icon_path)
 
         app.configure(bg="#E0E0E0")
         app.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -126,6 +144,14 @@ class PlatinaArchiveClient:
             app, text="Reload song DB", command=self.load_db
         )
         self.reload_db_button.pack(side=tk.BOTTOM, pady=5)
+        latest_version = fetch_latest_client_version()
+        if latest_version > VERSION:
+            latest_version_str = version_to_string(latest_version)
+            self.log_message(
+                f"새로운 클라이언트 버전이 탐지되었습니다, 업데이트를 권장드립니다. ({current_version_str} -> {latest_version_str})"
+            )
+        else:
+            self.log_message("클라이언트가 최신 버전입니다.")
 
         if not self.api_key:
             messagebox.showinfo(
@@ -179,7 +205,7 @@ class PlatinaArchiveClient:
 
     def log_message(self, msg):
         now = datetime.now()
-        structured_time = f"[{now.hour}:{now.minute}:{now.second}] "
+        structured_time = f"[{now.hour:02d}:{now.minute:02d}:{now.second:02d}] "
         self.log_text.insert(tk.END, structured_time + msg + "\n")
         self.log_text.see(tk.END)
 

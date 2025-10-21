@@ -1,12 +1,13 @@
 import os
 import sys
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import messagebox, ttk
 
 import keyring
+from keyring.backends import Windows
 import requests
 
-
+keyring.set_keyring(Windows.WinVaultKeyring())
 KEYRING_SERVICE_ID = "PlatinaArchiveClient"
 KEY_FILE = "platina.key"
 

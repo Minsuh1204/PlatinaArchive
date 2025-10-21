@@ -13,5 +13,6 @@ tesseract/
 # Environment file
 .env
 
-# App DB cache
-.platina-cache/
+# Cx_Freeze build
+build/
+dist/
