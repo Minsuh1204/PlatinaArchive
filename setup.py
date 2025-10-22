@@ -1,5 +1,6 @@
-import sys
 from cx_Freeze import setup, Executable
+
+from client import VERSION, version_to_string
 
 # NEVER CHANGE IT!!!
 UPGRADE_CODE = "{b4c02c5f-5b55-4eeb-a4b6-624b3aa03dbf}"
@@ -14,6 +15,7 @@ build_exe_options = {
         "keyring",
         "keyring.backends.Windows",
         "pynput",
+        "scipy",
         "win32ctypes",
         "win32ctypes.pywin32",
     ],
@@ -30,7 +32,6 @@ build_exe_options = {
         "matplotlib",
         "mypy",
         "sqlalchemy",
-        "scipy",
         "pandas",
         "pytz",
         "test",
@@ -45,6 +46,10 @@ bdist_msi_options = {
     "install_icon": "icon.ico",
     "upgrade_code": UPGRADE_CODE,
     "launch_on_finish": True,
+    "summary_data": {
+        "author": "Endeavy",
+        "comments": "Desktop app to keep track of PLATiNA::LAB results",
+    },
 }
 
 # Executable configuration
@@ -61,7 +66,7 @@ executables = [
 
 setup(
     name="PLATiNA-ARCHiVE",
-    version="0.2.4",
+    version=version_to_string(VERSION)[1:],
     description="Desktop app to capture PLATiNA::LAB results",
     options={"build_exe": build_exe_options, "bdist_msi": bdist_msi_options},
     executables=executables,

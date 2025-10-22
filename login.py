@@ -39,25 +39,37 @@ class RegisterWindow(tk.Toplevel):
         self.parent = parent
         self.success_callback = success_callback
         self.title("플라티나 아카이브 등록")
-        self.geometry("300x200")
+        self.center_window()
         self.transient(parent)
         self.grab_set()
-
         self.create_widgets()
+
+    def center_window(self):
+        self.update_idletasks()
+        width = 300
+        height = 200
+
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+
+        x = (screen_width - width) // 2
+        y = (screen_height - height) // 2
+
+        self.geometry(f"{width}x{height}+{x}+{y}")
 
     def create_widgets(self):
         # Decoder name
-        ttk.Label(self, text="Name: ").pack(pady=5)
+        ttk.Label(self, text="이름: ").pack(pady=5)
         self.name_entry = ttk.Entry(self)
         self.name_entry.pack(pady=2, padx=10, fill="x")
 
         # Password
-        ttk.Label(self, text="Password: ").pack(pady=5)
+        ttk.Label(self, text="비밀번호: ").pack(pady=5)
         self.password_entry = ttk.Entry(self, show="*")
         self.password_entry.pack(pady=2, padx=10, fill="x")
 
         # Register button
-        ttk.Button(self, text="Register", command=self.attempt_register).pack(pady=10)
+        ttk.Button(self, text="등록", command=self.attempt_register).pack(pady=10)
         self.bind("<Return>", lambda x: self.attempt_register())
 
     def attempt_register(self):

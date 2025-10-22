@@ -772,7 +772,8 @@ def version_to_string(version: tuple[int, int, int]):
 
 def fetch_archive(api_key: str) -> dict[str, DecodeResult]:
     archive_endpoint = "https://www.platina-archive.app/api/v1/get_archive"
-    res = requests.post(archive_endpoint, json={"api_key": api_key})
+    headers = {"X-API-Key": api_key, "Content-Type": "application/json"}
+    res = requests.post(archive_endpoint, headers=headers)
     archive_json = res.json()
     archive = {}
     for arc in archive_json:

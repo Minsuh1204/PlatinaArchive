@@ -136,7 +136,7 @@ class PlatinaArchiveClient:
         self.analyze_button.pack(side=tk.BOTTOM, pady=5)
 
         self.log_message(
-            "App started. Press Alt+PrtSc and then Alt-Inert to run analysis or press button"
+            "Alt+PrtSc, Alt+Insert 단축키를 통해 곡 선택 화면, 결과창에서 기록을 분석할 수 있습니다."
         )
 
         # --- Button for reloading song DB ---
@@ -161,14 +161,15 @@ class PlatinaArchiveClient:
             RegisterWindow(self.app, self._handle_successful_register)
         else:
             self.decoder_name = self.api_key.split("::")[0]
-            self.log_message(f"Welcome, {self.decoder_name}")
+            self.log_message(f"{self.decoder_name}님, 환영합니다.")
+            self.archive = fetch_archive(self.api_key)
         self.load_db()
-        self.archive = fetch_archive(self.api_key)
 
     def _handle_successful_register(self, name: str, api_key: str):
         self.decoder_name = name
         self.api_key = api_key
-        self.log_message(f"Register successful. Welcome, {name}")
+        self.archive = fetch_archive(self.api_key)
+        self.log_message(f"등록 성공. 환영합니다, {name}님.")
 
     def _setup_global_hotkey(self):
         """Setup the global hotkey <Alt+Insert>"""
@@ -200,7 +201,7 @@ class PlatinaArchiveClient:
                 song_data = fetch_songs()
             except:
                 time.sleep(0.5)  # Try again after 0.5s
-        self.log_message(f"{len(song_data)} songs loaded")
+        self.log_message(f"곡 데이터 {len(song_data)}개 로딩 완료")
         self.analyzer = ScreenshotAnalyzer(song_data)
 
     def log_message(self, msg):
@@ -345,8 +346,11 @@ class PlatinaArchiveClient:
         update_archive_endpoint = (
             "https://www.platina-archive.app/api/v1/update_archive"
         )
-        new_archive_json = {"api_key": self.api_key} | new_archive.json()
-        requests.post(update_archive_endpoint, json=new_archive_json)
+        headers = {
+            "X-API-Key": self.api_key,
+            "Content-Type": "application/json",
+        }
+        requests.post(update_archive_endpoint, json=new_archive.json(), headers=headers)
         # update internal archive
         archive_key = f"{new_archive.song.id}|{new_archive.line}|{new_archive.difficulty}|{new_archive.level}"
         internal_archive = self.archive.get(
